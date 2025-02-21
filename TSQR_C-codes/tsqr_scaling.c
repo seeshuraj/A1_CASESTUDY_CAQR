@@ -5,7 +5,7 @@
 #include <time.h>
 
 // Local QR factorization using LAPACK
-void local_qr(double *A, int rows, int cols, double *Q, double *R) {
+void tsqr_factorize(double *A, int rows, int cols, double *Q, double *R) {
     int lda = cols;
     double *tau = (double *)malloc(cols * sizeof(double));
     if (tau == NULL) {
@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
         double start_time = MPI_Wtime();
 
         // Perform local QR
-        local_qr(A_local, block_rows, n_fixed, Q_local, R_local);
+        tsqr_factorize(A_local, block_rows, n_fixed, Q_local, R_local);
 
         // Gather all R matrices at root (rank 0)
         double *R_all = (double *)malloc(size * n_fixed * n_fixed * sizeof(double));
@@ -107,108 +107,23 @@ int main(int argc, char **argv) {
                 R_combined[i] = R_all[i];               // R1
                 R_combined[n_fixed * n_fixed + i] = R_all[n_fixed * n_fixed + i]; // R2
             }
-            local_qr(R_combined, 2 * n_fixed, n_fixed, NULL, R_temp);
+            tsqr_factorize(R_combined, 2 * n_fixed, n_fixed, NULL, R_temp);
 
             // Combine R3 and R4
             for (int i = 0; i < n_fixed * n_fixed; i++) {
                 R_combined[i] = R_all[2 * n_fixed * n_fixed + i];   // R3
                 R_combined[n_fixed * n_fixed + i] = R_all[3 * n_fixed * n_fixed + i]; // R4
             }
-            local_qr(R_combined, 2 * n_fixed, n_fixed, NULL, R_final);
+            tsqr_factorize(R_combined, 2 * n_fixed, n_fixed, NULL, R_final);
 
             // Combine R_temp and R_final
             for (int i = 0; i < n_fixed * n_fixed; i++) R_combined[i] = R_temp[i];
             for (int i = 0; i < n_fixed * n_fixed; i++) R_combined[n_fixed * n_fixed + i] = R_final[i];
-            local_qr(R_combined, 2 * n_fixed, n_fixed, NULL, R_final);
+            tsqr_factorize(R_combined, 2 * n_fixed, n_fixed, NULL, R_final);
 
             // Measure end time
             double end_time = MPI_Wtime();
             printf("%d\t%.6f\n", m, end_time - start_time);
-
-            free(R_combined);
-            free(R_temp);
-            free(R_final);
-        }
-
-        free(A_local);
-        free(Q_local);
-        free(R_local);
-        free(R_all);
-    }
-
-    if (rank == 0) {
-        printf("\nScaling with respect to n (m fixed):\n");
-        printf("n\tTime (s)\n");
-    }
-
-    // Scaling with respect to n (m fixed)
-    int m_fixed = 1000;
-    for (int i = 0; i < num_n; i++) {
-        int n = n_values[i];
-        int block_rows = m_fixed / size;
-
-        // Allocate memory for local data
-        double *A_local = (double *)malloc(block_rows * n * sizeof(double));
-        double *Q_local = (double *)malloc(block_rows * n * sizeof(double));
-        double *R_local = (double *)malloc(n * n * sizeof(double));
-
-        if (A_local == NULL || Q_local == NULL || R_local == NULL) {
-            fprintf(stderr, "Memory allocation failed\n");
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-
-        // Initialize local matrix with random data
-        srand(rank + 1);
-        for (int i = 0; i < block_rows * n; i++) A_local[i] = (double)rand() / RAND_MAX;
-
-        // Measure execution time
-        double start_time = MPI_Wtime();
-
-        // Perform local QR
-        local_qr(A_local, block_rows, n, Q_local, R_local);
-
-        // Gather all R matrices at root (rank 0)
-        double *R_all = (double *)malloc(size * n * n * sizeof(double));
-        if (R_all == NULL) {
-            fprintf(stderr, "Memory allocation failed for R_all\n");
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-
-        MPI_Gather(R_local, n * n, MPI_DOUBLE, R_all, n * n, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-
-        // Root process combines R matrices hierarchically
-        if (rank == 0) {
-            double *R_combined = (double *)malloc(2 * n * n * sizeof(double));
-            double *R_temp = (double *)malloc(n * n * sizeof(double));
-            double *R_final = (double *)malloc(n * n * sizeof(double));
-
-            if (R_combined == NULL || R_temp == NULL || R_final == NULL) {
-                fprintf(stderr, "Memory allocation failed at root\n");
-                MPI_Abort(MPI_COMM_WORLD, 1);
-            }
-
-            // Combine R1 and R2
-            for (int i = 0; i < n * n; i++) {
-                R_combined[i] = R_all[i];               // R1
-                R_combined[n * n + i] = R_all[n * n + i]; // R2
-            }
-            local_qr(R_combined, 2 * n, n, NULL, R_temp);
-
-            // Combine R3 and R4
-            for (int i = 0; i < n * n; i++) {
-                R_combined[i] = R_all[2 * n * n + i];   // R3
-                R_combined[n * n + i] = R_all[3 * n * n + i]; // R4
-            }
-            local_qr(R_combined, 2 * n, n, NULL, R_final);
-
-            // Combine R_temp and R_final
-            for (int i = 0; i < n * n; i++) R_combined[i] = R_temp[i];
-            for (int i = 0; i < n * n; i++) R_combined[n * n + i] = R_final[i];
-            local_qr(R_combined, 2 * n, n, NULL, R_final);
-
-            // Measure end time
-            double end_time = MPI_Wtime();
-            printf("%d\t%.6f\n", n, end_time - start_time);
 
             free(R_combined);
             free(R_temp);
