@@ -7,7 +7,7 @@
 #define BLOCK_ROWS 100  // Rows per process
 
 // Local QR factorization using LAPACK
-void local_qr(double *A, int rows, int cols, double *Q, double *R) {
+void tsqr_factorize(double *A, int rows, int cols, double *Q, double *R) {
     int lda = cols;
     double *tau = (double *)malloc(cols * sizeof(double));
     if (tau == NULL) {
@@ -62,7 +62,7 @@ int main(int argc, char **argv) {
     for (int i = 0; i < BLOCK_ROWS * N; i++) A_local[i] = (double)rand() / RAND_MAX;
 
     // Perform local QR
-    local_qr(A_local, BLOCK_ROWS, N, Q_local, R_local);
+    tsqr_factorize(A_local, BLOCK_ROWS, N, Q_local, R_local);
 
     // Gather all R matrices at root (rank 0)
     double *R_all = (double *)malloc(4 * N * N * sizeof(double));
@@ -89,19 +89,19 @@ int main(int argc, char **argv) {
             R_combined[i] = R_all[i];               // R1
             R_combined[N * N + i] = R_all[N * N + i]; // R2
         }
-        local_qr(R_combined, 2 * N, N, NULL, R_temp);
+        tsqr_factorize(R_combined, 2 * N, N, NULL, R_temp);
 
         // Combine R3 and R4
         for (int i = 0; i < N * N; i++) {
             R_combined[i] = R_all[2 * N * N + i];   // R3
             R_combined[N * N + i] = R_all[3 * N * N + i]; // R4
         }
-        local_qr(R_combined, 2 * N, N, NULL, R_final);
+        tsqr_factorize(R_combined, 2 * N, N, NULL, R_final);
 
         // Combine R_temp and R_final
         for (int i = 0; i < N * N; i++) R_combined[i] = R_temp[i];
         for (int i = 0; i < N * N; i++) R_combined[N * N + i] = R_final[i];
-        local_qr(R_combined, 2 * N, N, NULL, R_final);
+        tsqr_factorize(R_combined, 2 * N, N, NULL, R_final);
 
         // Print final R
         printf("Final R:\n");
@@ -122,5 +122,8 @@ int main(int argc, char **argv) {
     free(R_all);
 
     MPI_Finalize();
-    return 0;
 }
+
+
+    
+   
